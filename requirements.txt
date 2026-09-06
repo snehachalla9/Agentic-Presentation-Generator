@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+tavily-python
+duckduckgo-search
+google-genai
+python-dotenv==1.0.0
+groq==0.5.0
+pillow
+python-pptx
+langgraph
