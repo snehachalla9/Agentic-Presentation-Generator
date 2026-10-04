@@ -1,39 +1,64 @@
 from langgraph.graph import StateGraph, START, END
 
 from .state import AgentState
+
 from agents.planner_agent.src.agents.planner_agent_v4 import UniversalPlanner
 from agents.researcher_agent.researcher import ResearcherAgent
 from agents.content_gen.agent import SlideContentAgent
 from agents.ppt_generator_v2.generator import PPTGeneratorV2
+from agents.supervisor.supervisor import Supervisor
+
 from pathlib import Path
 from pptx import Presentation
-from agents.supervisor.supervisor import Supervisor
-from agents.researcher_agent.services.llm_service import LLMService
 
-def planner_node(state: AgentState):
+
+# ============================================================
+# PLANNER
+# ============================================================
+
+def planner_node(state: AgentState, llm_gateway):
 
     print("\n🤖 Real Planner Agent is running...")
     print("Topic:", state["topic"])
 
     try:
-        planner = UniversalPlanner()
+
+        planner = UniversalPlanner(
+            llm_gateway=llm_gateway
+        )
 
         plan = planner.create_presentation(
             state["topic"]
         )
-
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["planner"] = retry_count.get("planner", 0) + 1
         return {
             "plan": plan,
-            "current_agent": "planner"
-        }
+            "current_agent": "planner",
+            "retry_count": retry_count
+            }
+
+        # return {
+        #     "plan": plan,
+        #     "current_agent": "planner"
+        # }
 
     except Exception as e:
-         error_message = f"Planner failed: {str(e)}"
-         print(f"❌ {error_message}")
-         return {
+        error_message = f"Planner failed: {str(e)}"
+        print(f"❌ {error_message}")
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["planner"] = retry_count.get("planner", 0) + 1
+        return {
             "current_agent": "planner",
-            "errors": state.get("errors", []) + [error_message]
-        }
+            "errors": state.get("errors", []) + [error_message],
+            "retry_count": retry_count
+            }
+
+
+# ============================================================
+# PLANNER VALIDATOR
+# ============================================================
+
 def planner_validator_node(state: AgentState):
 
     print("\n🔎 Validating Planner output...")
@@ -53,9 +78,13 @@ def planner_validator_node(state: AgentState):
     is_valid = len(validation_errors) == 0
 
     if is_valid:
+
         print("✅ Planner validation passed")
+
     else:
+
         print("❌ Planner validation failed")
+
         for error in validation_errors:
             print(f"   - {error}")
 
@@ -70,37 +99,68 @@ def planner_validator_node(state: AgentState):
 
 def route_after_planner_validation(state: AgentState):
 
-    validation = state.get("validation_results", {})
+    validation = state.get(
+        "validation_results",
+        {}
+    )
 
     if validation.get("planner_valid"):
         return "research"
 
     return END
-def research_node(state: AgentState):
+
+
+# ============================================================
+# RESEARCH
+# ============================================================
+
+def research_node(
+    state: AgentState,
+    llm_gateway
+):
 
     print("\n🔍 Research Agent is running...")
 
     try:
-        researcher = ResearcherAgent()
+
+        researcher = ResearcherAgent(
+            llm_gateway=llm_gateway
+        )
 
         research_output = researcher.research_from_planner(
             state["plan"]
         )
-
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["research"] = retry_count.get("research", 0) + 1
         return {
             "research": research_output,
-             "current_agent": "research"
-        }
+            "current_agent": "research",
+            "retry_count": retry_count
+            }
+
+        # return {
+        #     "research": research_output,
+        #     "current_agent": "research"
+        # }
 
     except Exception as e:
+
         error_message = f"Research failed: {str(e)}"
 
         print(f"❌ {error_message}")
-
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["research"] = retry_count.get("research", 0) + 1
         return {
             "current_agent": "research",
-            "errors": state.get("errors", []) + [error_message]
+            "errors": state.get("errors", []) + [error_message],
+            "retry_count": retry_count
         }
+
+
+# ============================================================
+# RESEARCH VALIDATOR
+# ============================================================
+
 def research_validator_node(state: AgentState):
 
     print("\n🔎 Validating Research output...")
@@ -110,21 +170,33 @@ def research_validator_node(state: AgentState):
     research = state.get("research")
 
     if not research:
-        validation_errors.append("Research output is missing")
+
+        validation_errors.append(
+            "Research output is missing"
+        )
 
     elif not isinstance(research, dict):
-        validation_errors.append("Research output must be a dictionary")
 
-    # Add your project-specific checks here
+        validation_errors.append(
+            "Research output must be a dictionary"
+        )
+
     elif len(research) == 0:
-        validation_errors.append("Research output is empty")
+
+        validation_errors.append(
+            "Research output is empty"
+        )
 
     is_valid = len(validation_errors) == 0
 
     if is_valid:
+
         print("✅ Research validation passed")
+
     else:
+
         print("❌ Research validation failed")
+
         for error in validation_errors:
             print(f"   - {error}")
 
@@ -136,41 +208,76 @@ def research_validator_node(state: AgentState):
         },
         "current_agent": "research_validator"
     }
+
+
 def route_after_research_validation(state: AgentState):
 
-    validation = state.get("validation_results", {})
+    validation = state.get(
+        "validation_results",
+        {}
+    )
 
     if validation.get("research_valid"):
         return "content"
 
     return END
-def content_node(state: AgentState):
+
+
+# ============================================================
+# CONTENT GENERATION
+# ============================================================
+
+def content_node(
+    state: AgentState,
+    llm_gateway
+):
 
     print("\n📝 Content Agent is running...")
 
     try:
-        llm = LLMService()
+
+        # IMPORTANT:
+        # Do NOT create LLMService() here.
+        # Use the shared gateway.
+
         agent = SlideContentAgent(
             research_output=state["research"],
-            llm=llm
+            llm=llm_gateway
         )
 
         content_output = agent.run()
-
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["content"] = retry_count.get("content", 0) + 1
         return {
             "content": content_output,
-            "current_agent": "content"
-        }
+            "current_agent": "content",
+            "retry_count": retry_count
+            }
+
+        # return {
+        #     "content": content_output,
+        #     "current_agent": "content"
+        # }
 
     except Exception as e:
+
         error_message = f"Content failed: {str(e)}"
 
         print(f"❌ {error_message}")
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["content"] = retry_count.get("content", 0) + 1
 
         return {
             "current_agent": "content",
-            "errors": state.get("errors", []) + [error_message]
+            "errors": state.get("errors", []) + [error_message],
+            "retry_count": retry_count
         }
+
+
+# ============================================================
+# CONTENT VALIDATOR
+# ============================================================
+
 def content_validator_node(state: AgentState):
 
     print("\n🔎 Validating Content output...")
@@ -181,25 +288,40 @@ def content_validator_node(state: AgentState):
 
     # 1. Content must exist
     if not content:
-        validation_errors.append("Content output is missing")
+
+        validation_errors.append(
+            "Content output is missing"
+        )
 
     # 2. Content must be a dictionary
     elif not isinstance(content, dict):
-        validation_errors.append("Content output must be a dictionary")
+
+        validation_errors.append(
+            "Content output must be a dictionary"
+        )
 
     # 3. Content should contain slides
     elif not content.get("slides"):
-        validation_errors.append("Content contains no slides")
+
+        validation_errors.append(
+            "Content contains no slides"
+        )
 
     # 4. Check number of slides
     elif len(content["slides"]) == 0:
-        validation_errors.append("Content contains zero slides")
+
+        validation_errors.append(
+            "Content contains zero slides"
+        )
 
     is_valid = len(validation_errors) == 0
 
     if is_valid:
+
         print("✅ Content validation passed")
+
     else:
+
         print("❌ Content validation failed")
 
         for error in validation_errors:
@@ -213,40 +335,63 @@ def content_validator_node(state: AgentState):
         },
         "current_agent": "content_validator"
     }
+
+
 def route_after_content_validation(state: AgentState):
 
-    validation = state.get("validation_results", {})
+    validation = state.get(
+        "validation_results",
+        {}
+    )
 
     if validation.get("content_valid"):
         return "ppt"
 
     return END
+
+
+# ============================================================
+# PPT GENERATION
+# ============================================================
+
 def ppt_node(state: AgentState):
 
     print("\n🎨 PPT Generator is running...")
 
     try:
+
         generator = PPTGeneratorV2()
 
         output_path = generator.generate(
             presentation_data=state["content"],
             output_path="output/final_v2.pptx"
         )
-
-        return {
-            "ppt": output_path,
-            "current_agent": "ppt"
-        }
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["ppt"] = retry_count.get("ppt", 0) + 1
+        return {"ppt": output_path,
+                "current_agent": "ppt",
+                "retry_count": retry_count
+                }
 
     except Exception as e:
+
         error_message = f"PPT generation failed: {str(e)}"
 
         print(f"❌ {error_message}")
+        retry_count = state.get("retry_count", {}).copy()
+        retry_count["ppt"] = retry_count.get("ppt", 0) + 1
 
         return {
             "current_agent": "ppt",
-            "errors": state.get("errors", []) + [error_message]
+            "errors": state.get("errors", []) + [error_message],
+            "retry_count": retry_count
         }
+
+
+# ============================================================
+# PPT VALIDATOR
+# ============================================================
+
 def ppt_validator_node(state: AgentState):
 
     print("\n🔎 Validating PPT output...")
@@ -257,35 +402,45 @@ def ppt_validator_node(state: AgentState):
 
     # 1. PPT output must exist
     if not ppt_path:
-        validation_errors.append("PPT output is missing")
+
+        validation_errors.append(
+            "PPT output is missing"
+        )
 
     else:
+
         path = Path(ppt_path)
 
         # 2. File must exist
         if not path.exists():
+
             validation_errors.append(
                 f"PPT file does not exist: {ppt_path}"
             )
 
         # 3. Must be .pptx
         elif path.suffix.lower() != ".pptx":
+
             validation_errors.append(
                 "PPT file must have .pptx extension"
             )
 
         else:
+
             try:
+
                 # 4. PPT must be readable
                 prs = Presentation(str(path))
 
                 # 5. PPT must contain slides
                 if len(prs.slides) == 0:
+
                     validation_errors.append(
                         "PPT contains no slides"
                     )
 
             except Exception as e:
+
                 validation_errors.append(
                     f"PPT cannot be opened: {e}"
                 )
@@ -293,8 +448,11 @@ def ppt_validator_node(state: AgentState):
     is_valid = len(validation_errors) == 0
 
     if is_valid:
+
         print("✅ PPT validation passed")
+
     else:
+
         print("❌ PPT validation failed")
 
         for error in validation_errors:
@@ -308,6 +466,12 @@ def ppt_validator_node(state: AgentState):
         },
         "current_agent": "ppt_validator"
     }
+
+
+# ============================================================
+# SUPERVISOR
+# ============================================================
+
 def supervisor_node(state: AgentState):
 
     print("\n🧠 Supervisor is deciding what to do next...")
@@ -322,20 +486,40 @@ def supervisor_node(state: AgentState):
         "next_agent": next_agent,
         "current_agent": "supervisor"
     }
+
+
 def route_from_supervisor(state: AgentState):
 
     next_agent = state.get("next_agent")
 
     return next_agent
 
-def build_graph():
+
+# ============================================================
+# BUILD GRAPH
+# ============================================================
+
+def build_graph(llm_gateway):
 
     workflow = StateGraph(AgentState)
 
+    # --------------------------------------------------------
+    # IMPORTANT
+    #
+    # LangGraph normally calls nodes with only `state`.
+    #
+    # Therefore we use lambda wrappers here to inject the
+    # SAME llm_gateway into the LLM-using nodes.
+    # --------------------------------------------------------
+
     workflow.add_node(
         "planner",
-        planner_node
+        lambda state: planner_node(
+            state,
+            llm_gateway
+        )
     )
+
     workflow.add_node(
         "planner_validator",
         planner_validator_node
@@ -343,72 +527,110 @@ def build_graph():
 
     workflow.add_node(
         "research",
-        research_node
+        lambda state: research_node(
+            state,
+            llm_gateway
+        )
     )
+
     workflow.add_node(
-    "research_validator",
-    research_validator_node
-)
-    workflow.add_node(
-    "content",
-    content_node
-)
-    workflow.add_node(
-    "content_validator",
-    content_validator_node
-)
-    workflow.add_node(
-    "ppt",
-    ppt_node
-)
-    workflow.add_node(
-    "ppt_validator",
-    ppt_validator_node
-)
-    workflow.add_node(
-    "supervisor",
-    supervisor_node
+        "research_validator",
+        research_validator_node
     )
-    workflow.add_edge(START, "supervisor")
+
+    workflow.add_node(
+        "content",
+        lambda state: content_node(
+            state,
+            llm_gateway
+        )
+    )
+
+    workflow.add_node(
+        "content_validator",
+        content_validator_node
+    )
+
+    workflow.add_node(
+        "ppt",
+        ppt_node
+    )
+
+    workflow.add_node(
+        "ppt_validator",
+        ppt_validator_node
+    )
+
+    workflow.add_node(
+        "supervisor",
+        supervisor_node
+    )
+
+    # ========================================================
+    # GRAPH EDGES
+    # ========================================================
+
+    workflow.add_edge(
+        START,
+        "supervisor"
+    )
+
+    # Supervisor decides next agent
     workflow.add_conditional_edges(
-    "supervisor",
-    route_from_supervisor,
-    {
-        "planner": "planner",
-        "research": "research",
-        "content": "content",
-        "ppt": "ppt",
-        "finish": END
-    }
-)
+        "supervisor",
+        route_from_supervisor,
+        {
+            "planner": "planner",
+            "research": "research",
+            "content": "content",
+            "ppt": "ppt",
+            "finish": END
+        }
+    )
+
+    # Planner → Validator → Supervisor
     workflow.add_edge(
         "planner",
-        "planner_validator")
+        "planner_validator"
+    )
+
     workflow.add_edge(
-    "planner_validator",
-    "supervisor"
-)
-    workflow.add_edge("research", 
-                       "research_validator")
+        "planner_validator",
+        "supervisor"
+    )
+
+    # Research → Validator → Supervisor
     workflow.add_edge(
-    "research_validator",
-    "supervisor"
-)
+        "research",
+        "research_validator"
+    )
+
     workflow.add_edge(
-    "content",
-    "content_validator"
-)
+        "research_validator",
+        "supervisor"
+    )
+
+    # Content → Validator → Supervisor
     workflow.add_edge(
-    "content_validator",
-    "supervisor"
-)
+        "content",
+        "content_validator"
+    )
+
     workflow.add_edge(
-    "ppt",
-    "ppt_validator"
-)
+        "content_validator",
+        "supervisor"
+    )
+
+    # PPT → Validator → Supervisor
     workflow.add_edge(
-    "ppt_validator",
-    "supervisor"
-)
-    
+        "ppt",
+        "ppt_validator"
+    )
+
+    workflow.add_edge(
+        "ppt_validator",
+        "supervisor"
+    )
+
+    # Compile graph
     return workflow.compile()

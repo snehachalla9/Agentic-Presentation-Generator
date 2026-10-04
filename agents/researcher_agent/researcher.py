@@ -23,16 +23,16 @@ except ImportError:
 class ResearcherAgent:
     """Researcher Agent: enriches Planner sections with structured research blocks"""
 
-    def __init__(self, config: Optional[ResearchConfig] = None):
+    def __init__(self, config: Optional[ResearchConfig] = None, llm_gateway=None):
         self.config = config or ResearchConfig()
-        self.llm = None
-        try:
-            from .services.llm_service import LLMService
-            if self.config.use_llm:
-                self.llm = LLMService()
-        except Exception as e:
-            print(f"⚠️ LLM Service failed: {e}")
+        self.llm = llm_gateway
 
+        if self.config.use_llm and self.llm is None:
+            try:
+                from agents.llm_gateway import LLMGateway
+                self.llm = LLMGateway()
+            except Exception as e:
+                print(f"⚠️ Shared gateway fallback failed: {e}")
     def research_from_planner(self, planner_json: Dict[str, Any]) -> Dict[str, Any]:
         topic = planner_json.get("topic", "Unknown")
         modules = planner_json.get("modules", [])

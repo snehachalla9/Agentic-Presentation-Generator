@@ -410,8 +410,8 @@ class LLMService:
 # ============================================================================
 
 class PlannerAgentV4:
-    def __init__(self):
-        self.llm = LLMService(provider="groq")
+    def __init__(self,llm_gateway=None):
+        self.llm = llm_gateway
         self.setup_directories()
         print("✅ Planner Agent V4 Ready (Fixed - No 413 Error)")
         print("   ⚙️  Temperature: 0.1")

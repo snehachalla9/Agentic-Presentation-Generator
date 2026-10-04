@@ -1,4 +1,5 @@
 from agents.orchestrator.graph import build_graph
+from agents.llm_gateway import LLMGateway
 
 
 def main():
@@ -8,13 +9,25 @@ def main():
     if not topic:
         topic = "overfitting in machine learning"
 
-    graph = build_graph()
+    # ONE shared gateway
+    llm_gateway = LLMGateway()
+
+    # Give the same gateway to the graph
+    graph = build_graph(
+        llm_gateway=llm_gateway
+    )
 
     initial_state = {
         "topic": topic,
         "errors": [],
-        "validation_results": {}
+        "validation_results": {},
+        "retry_count": {
+        "planner": 0,
+        "research": 0,
+        "content": 0,
+        "ppt": 0
     }
+}
 
     print("\n🚀 Starting Agentic PPT Generation...\n")
 

@@ -1,4 +1,4 @@
-from typing import TypedDict, Dict, Any,List
+from typing import TypedDict, Dict, Any, List
 
 
 class AgentState(TypedDict, total=False):
@@ -15,4 +15,6 @@ class AgentState(TypedDict, total=False):
 
     # Validation
     validation_results: Dict[str, Any]
-   
+
+    # Retry tracking
+    retry_count: Dict[str, int]

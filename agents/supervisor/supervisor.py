@@ -3,24 +3,40 @@ class Supervisor:
     def decide(self, state):
 
         validation = state.get("validation_results", {})
+        retry_count = state.get("retry_count", {})
 
-        # If planner validation failed, stop for now
+        # -----------------------------------
+        # Validation failures + retry policy
+        # -----------------------------------
+
+        # Planner failed validation
         if validation.get("planner_valid") is False:
+            if retry_count.get("planner", 0) < 1:
+                return "planner"
             return "finish"
 
-        # If research validation failed, stop for now
+        # Research failed validation
         if validation.get("research_valid") is False:
+            if retry_count.get("research", 0) < 1:
+                return "research"
             return "finish"
 
-        # If content validation failed, stop for now
+        # Content failed validation
         if validation.get("content_valid") is False:
+            if retry_count.get("content", 0) < 1:
+                return "content"
             return "finish"
 
-        # If PPT validation failed, stop for now
+        # PPT failed validation
         if validation.get("ppt_valid") is False:
+            if retry_count.get("ppt", 0) < 1:
+                return "ppt"
             return "finish"
 
+        # -----------------------------------
         # Normal pipeline
+        # -----------------------------------
+
         if not state.get("plan"):
             return "planner"
 
