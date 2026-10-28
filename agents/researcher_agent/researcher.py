@@ -64,47 +64,56 @@ class ResearcherAgent:
         return planner_json
 
     def _build_query_context(self, topic: str, module: Dict, section: Dict) -> str:
-        parts = [
-            topic,
-            module.get("title", ""),
-            section.get("heading", ""),
-            "definition",
-            "examples",
-            "applications",
-            "statistics",
-            "case study",
-            "latest trends",
-            "best practices",
-            "workflow",
-            " ".join(section.get("concepts", [])),
-            " ".join(section.get("questions", []))
-        ]
-        return " ".join([p for p in parts if p]).strip()
+        """Short, clean search query instead of a 30-word keyword dump."""
+        title = (module.get("title") or "").strip()
+        heading = (section.get("heading") or "").strip()
+
+        parts = [title] if title else []
+        if heading and heading.lower() not in title.lower():
+            parts.append(heading)
+
+        query = " ".join(parts)
+        if topic and topic.lower() not in query.lower():
+            query = f"{topic} {query}"
+
+        return f"{query.strip()} overview"[:120]
 
     def _search_topic(self, query: str) -> List[Dict]:
         results = []
-        try:
-            from .services.tavily_service import tavily_search
-            results += tavily_search(query, max_results=self.config.max_sources)
-            for r in results: r['source_type'] = 'tavily'
-        except Exception:
-            pass
 
-        try:
-            from .services.serper_service import serper_search
-            serper_results = serper_search(query, max_results=self.config.max_sources)
-            for r in serper_results: r['source_type'] = 'serper'
-            results += serper_results
-        except Exception:
-            pass
+        # Circuit breaker: skip a provider after 2 empty/failed results in this run
+        if not hasattr(self, "_provider_fails"):
+            self._provider_fails = {"tavily": 0, "serper": 0, "duckduckgo": 0}
 
-        try:
-            from .services.duckduckgo_service import duckduckgo_search
-            ddg_results = duckduckgo_search(query, max_results=self.config.max_sources)
-            for r in ddg_results: r['source_type'] = 'duckduckgo'
-            results += ddg_results
-        except Exception:
-            pass
+        def _call(name):
+            try:
+                if name == "tavily":
+                    from .services.tavily_service import tavily_search as fn
+                elif name == "serper":
+                    from .services.serper_service import serper_search as fn
+                else:
+                    from .services.duckduckgo_service import duckduckgo_search as fn
+                return name, fn(query, max_results=self.config.max_sources) or []
+            except Exception:
+                return name, []
+
+        active = [p for p, n in self._provider_fails.items() if n < 2]
+        if not active:
+            print("⚠️ All search providers disabled for this run, using LLM knowledge only")
+            return []
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=len(active)) as pool:
+            for name, res in pool.map(_call, active):
+                if res:
+                    self._provider_fails[name] = 0
+                    for r in res:
+                        r["source_type"] = name
+                    results += res
+                else:
+                    self._provider_fails[name] += 1
+                    if self._provider_fails[name] == 2:
+                        print(f"🚫 {name} disabled for the rest of this run")
 
         # Deduplicate by URL
         seen = set()
@@ -116,9 +125,9 @@ class ResearcherAgent:
                 seen.add(url)
 
         PRIORITY = [
-            "nature.com","science.org","ieee.org","acm.org","arxiv.org",
-            "springer.com","sciencedirect.com","nih.gov",".gov",".edu",
-            "docs.","openai.com","huggingface.co","tensorflow.org","pytorch.org","wikipedia.org"
+            "nature.com", "science.org", "ieee.org", "acm.org", "arxiv.org",
+            "springer.com", "sciencedirect.com", "nih.gov", ".gov", ".edu",
+            "docs.", "openai.com", "huggingface.co", "tensorflow.org", "pytorch.org", "wikipedia.org"
         ]
         ranked = sorted(deduped, key=lambda r: self._rank_source(r.get("url", ""), PRIORITY))
         return ranked[:5]
@@ -163,19 +172,30 @@ class ResearcherAgent:
             "confidence": 0.5 if results else 0.0,
             "raw_sources": raw_sources
         }
+        if self.llm:
+            use_web = bool(combined_text)
 
-        if self.llm and combined_text:
-            system_prompt = """
+            if use_web:
+                source_rule = "Use only the provided sources. Never invent facts."
+                sources_block = combined_text
+            else:
+                source_rule = (
+                    "No web sources are available. Use only well-established general knowledge. "
+                    "Do not invent statistics, dates, names or citations. "
+                    "Leave statistics, case_studies and references empty if you are not sure."
+                )
+                sources_block = (
+                    f"(no web sources)\nTopic: {topic}\n"
+                    f"Module: {module.get('title', '')}\n"
+                    f"Section: {section.get('heading', '')}\n"
+                    f"Concepts: {', '.join(section.get('concepts', []))}"
+                )
+
+            system_prompt = f"""
 You are an expert Research Scientist and Technical Educator.
-
-Generate accurate, structured research using only the provided sources.
-
-Never invent facts.
-
+{source_rule}
 Merge duplicate information.
-
 Keep explanations concise and presentation-ready.
-
 Return valid JSON only.
 """
             user_prompt = f"""
@@ -187,7 +207,6 @@ Requirements:
 - educational
 - no repetition
 - practical examples
-- statistics when available
 - return JSON only
 
 Schema:
@@ -212,37 +231,39 @@ Schema:
 }}
 
 Sources:
-{combined_text}
+{sources_block}
 """
             try:
                 structured_json = self.llm.generate(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     temperature=0.2,
-                    max_tokens=1200,
+                    max_tokens=4000,
                 )
                 data = self._safe_json_loads(structured_json)
-                if isinstance(data, dict):
-                    # Validation
+                if isinstance(data, dict) and data:
                     if not isinstance(data.get("key_facts"), list):
                         data["key_facts"] = []
                     if not isinstance(data.get("examples"), list):
                         data["examples"] = []
                     if not data.get("summary"):
                         data["summary"] = "Summary unavailable."
-                    if len(data["summary"]) < 40:
-                        print("⚠️ Summary too short")
 
                     research.update(data)
                     research["raw_sources"] = raw_sources
+                    research["source_mode"] = "web" if use_web else "llm_knowledge"
 
-                    # Smarter confidence
-                    confidence = 0.5
-                    if len(results) >= 3: confidence += 0.2
-                    if data.get("statistics"): confidence += 0.1
-                    if data.get("case_studies"): confidence += 0.1
-                    if data.get("references"): confidence += 0.1
-                    research["confidence"] = min(confidence, 0.95)
+                    if use_web:
+                        confidence = 0.5
+                        if len(results) >= 3: confidence += 0.2
+                        if data.get("statistics"): confidence += 0.1
+                        if data.get("case_studies"): confidence += 0.1
+                        if data.get("references"): confidence += 0.1
+                        research["confidence"] = min(confidence, 0.95)
+                    else:
+                        research["confidence"] = 0.4
+                else:
+                    print("⚠️ Research JSON empty or unparseable (possibly truncated)")
             except Exception as e:
                 print(f"⚠️ LLM synthesis failed: {e}")
 

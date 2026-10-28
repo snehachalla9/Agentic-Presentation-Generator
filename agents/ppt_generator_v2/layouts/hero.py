@@ -134,29 +134,27 @@ def render_hero(prs, data):
 
     visual.line.color.rgb = Theme.BORDER
 
+        # ---------------------------------
+    # 9. Supporting points in the visual panel
     # ---------------------------------
-    # 9. Temporary visual label
-    # ---------------------------------
 
-    image_plan = data.get("image_plan", {})
+    bullets = [
+        str(b).strip()
+        for b in content.get("bullets", [])
+        if b and str(b).strip()
+    ][:5]
 
-    subject = image_plan.get(
-        "subject",
-        "Visual"
-    )
-
-    add_text(
-        slide=slide,
-        text=subject,
-        x=7.2,
-        y=3.4,
-        w=5.0,
-        h=0.7,
-        font_size=18,
-        bold=True,
-        color=Theme.MUTED_TEXT,
-        align=PP_ALIGN.CENTER,
-        vertical_anchor=MSO_ANCHOR.MIDDLE,
-    )
+    if bullets:
+        add_text(
+            slide=slide,
+            text="\n\n".join(f"•  {b}" for b in bullets),
+            x=7.2,
+            y=2.05,
+            w=5.0,
+            h=4.3,
+            font_size=14,
+            color=Theme.TEXT,
+            vertical_anchor=MSO_ANCHOR.MIDDLE,
+        )
 
     return slide

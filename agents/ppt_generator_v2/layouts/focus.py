@@ -33,6 +33,11 @@ def render_focus(prs, data):
     main_message = content.get("main_message", "")
     callout = content.get("callout", "")
     takeaway = content.get("key_takeaway", "")
+    bullets = [
+        str(b).strip()
+        for b in content.get("bullets", [])
+        if b and str(b).strip()
+    ][:5]
 
     add_header(
         slide=slide,
@@ -84,7 +89,34 @@ def render_focus(prs, data):
         vertical_anchor=MSO_ANCHOR.MIDDLE,
     )
 
-    if callout:
+    if callout and len(callout.split()) >= 5 and callout.rstrip()[-1:] in ".!?%)":
+            # Main idea (smaller when bullets follow)
+        add_text(
+        slide=slide,
+        text=main_message or takeaway or title,
+        x=2.0,
+        y=2.75,
+        w=9.33,
+        h=1.0 if bullets else 1.35,
+        font_size=22 if bullets else 26,
+        bold=True,
+        color=Theme.TEXT,
+        align=PP_ALIGN.CENTER,
+        vertical_anchor=MSO_ANCHOR.MIDDLE,
+    )
+
+    if bullets:
+        add_text(
+            slide=slide,
+            text="\n".join(f"•  {b}" for b in bullets),
+            x=1.8,
+            y=3.85,
+            w=9.73,
+            h=1.8,
+            font_size=13,
+            color=Theme.MUTED_TEXT,
+        )
+    elif callout and len(callout.split()) >= 5 and callout.rstrip()[-1:] in ".!?%)":
         add_text(
             slide=slide,
             text=callout,

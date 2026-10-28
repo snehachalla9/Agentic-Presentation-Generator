@@ -10,7 +10,7 @@ print("="*50)
 
 api_key = os.getenv("GROQ_API_KEY")
 # Read model from .env file, NOT hardcoded
-model = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
+model = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
 
 if not api_key:
     print("❌ GROQ_API_KEY not found in .env file!")
@@ -38,5 +38,5 @@ try:
 except Exception as e:
     print(f"❌ Error: {e}")
     print("\n📝 Troubleshooting:")
-    print("1. Check your .env file has MODEL_NAME=llama-3.3-70b-versatile")
+    print("1. Check your .env file has MODEL_NAME=openai/gpt-oss-120b")
     print("2. Run: cat .env to verify")

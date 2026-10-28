@@ -7,7 +7,7 @@ from agents.researcher_agent.researcher import ResearcherAgent
 from agents.content_gen.agent import SlideContentAgent
 from agents.ppt_generator_v2.generator import PPTGeneratorV2
 from agents.supervisor.supervisor import Supervisor
-
+from agents.content_gen.validator import SlideValidator
 from pathlib import Path
 from pptx import Presentation
 
@@ -30,6 +30,15 @@ def planner_node(state: AgentState, llm_gateway):
         plan = planner.create_presentation(
             state["topic"]
         )
+        print("\n========== PLAN DEBUG ==========")
+        print("PLAN KEYS:", list(plan.keys()))
+        print("SLIDE COUNT:", len(plan.get("slides", [])))
+        print("MODULE COUNT:", len(plan.get("modules", [])))
+        if plan.get("slides"):
+            print("FIRST SLIDE:", plan["slides"][0])
+        if plan.get("modules"):
+            print("FIRST MODULE:", plan["modules"][0])
+        print("================================\n")
         retry_count = state.get("retry_count", {}).copy()
         retry_count["planner"] = retry_count.get("planner", 0) + 1
         return {
@@ -277,74 +286,119 @@ def content_node(
 # ============================================================
 # CONTENT VALIDATOR
 # ============================================================
-
 def content_validator_node(state: AgentState):
 
-    print("\n🔎 Validating Content output...")
-
-    validation_errors = []
+    print("\n🔎 Validating Content quality...")
 
     content = state.get("content")
+    research = state.get("research", {})
+    plan = state.get("plan", {})
 
-    # 1. Content must exist
+    validation_errors = []
+    validation_warnings = []
+    slide_reports = []
+
+    # Basic content check
     if not content:
+        validation_errors.append("Content output is missing")
 
-        validation_errors.append(
-            "Content output is missing"
-        )
-
-    # 2. Content must be a dictionary
     elif not isinstance(content, dict):
+        validation_errors.append("Content output must be a dictionary")
 
-        validation_errors.append(
-            "Content output must be a dictionary"
-        )
-
-    # 3. Content should contain slides
     elif not content.get("slides"):
+        validation_errors.append("Content contains no slides")
 
-        validation_errors.append(
-            "Content contains no slides"
-        )
+    else:
+        validator = SlideValidator()
 
-    # 4. Check number of slides
-    elif len(content["slides"]) == 0:
+        for index, wrapper in enumerate(content["slides"]):
 
-        validation_errors.append(
-            "Content contains zero slides"
-        )
+            try:
+                s = wrapper.get("slide", wrapper)
+                c = s.get("content", {})
 
+                # Flatten into the shape the validator expects
+                slide_content = {
+                    "headline": c.get("title") or c.get("headline", ""),
+                    "main_message": c.get("main_message", ""),
+                    "bullets": c.get("bullets", []),
+                    "visual_spec": s.get("visual_spec", {}),
+                    "speaker_notes": s.get("speaker_notes", {}),
+                }
+
+                slide_blueprint = {
+                    "slide": {
+                        "presentation_plan": {
+                            "slide_focus": slide_content["headline"] or f"Slide {index + 1}",
+                            "slide_type": s.get("visual_spec", {}).get("visual_type", "content"),
+                            "bullet_limit": 5,
+                            "content_mapping": {}
+                        }
+                    }
+                }
+                report = validator.validate(
+                    slide_content=slide_content,
+                    slide_blueprint=slide_blueprint,
+                    research=research
+                )
+
+                slide_reports.append({
+                    "slide_index": index,
+                    "report": report
+                })
+
+                validation = report.get("validation", {})
+
+                # Collect errors
+                validation_errors.extend(
+                    validation.get("errors", [])
+                )
+
+                # Collect warnings
+                validation_warnings.extend(
+                    validation.get("warnings", [])
+                )
+
+            except Exception as e:
+
+                validation_errors.append(
+                    f"Slide {index + 1} validation failed: {str(e)}"
+                )
+
+    # Final quality decision
     is_valid = len(validation_errors) == 0
 
     if is_valid:
-
-        print("✅ Content validation passed")
-
+        print("✅ Content quality validation passed")
     else:
-
-        print("❌ Content validation failed")
+        print("❌ Content quality validation failed")
 
         for error in validation_errors:
             print(f"   - {error}")
+
+    print(f"📊 Slides validated: {len(slide_reports)}")
+    print(f"⚠️ Warnings: {len(validation_warnings)}")
+    print(f"❌ Errors: {len(validation_errors)}")
 
     return {
         "validation_results": {
             **state.get("validation_results", {}),
             "content_valid": is_valid,
-            "content_errors": validation_errors
+            "content_errors": validation_errors,
+            "content_warnings": validation_warnings,
+            "content_slide_reports": slide_reports
         },
         "current_agent": "content_validator"
     }
-
-
 def route_after_content_validation(state: AgentState):
+    validation = state.get("validation_results", {})
+    content = state.get("content") or {}
+    slides = content.get("slides", []) if isinstance(content, dict) else []
 
-    validation = state.get(
-        "validation_results",
-        {}
-    )
-
-    if validation.get("content_valid"):
+    # Build the deck whenever there are slides; real errors are still reported
+    if slides:
+        if not validation.get("content_valid"):
+            print("⚠️ Content has validation issues, generating PPT anyway")
         return "ppt"
 
     return END

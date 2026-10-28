@@ -44,7 +44,7 @@ def render_cards(prs, data):
     ]
 
     # First version supports max 4 cards
-    bullets = bullets[:4]
+    bullets = bullets[:6]
 
     # ---------------------------------
     # 4. Header
@@ -121,7 +121,7 @@ def _render_horizontal_cards(
         - gap * (count - 1)
     ) / count
 
-    card_height = 4.45
+    card_height = 3.0
 
     for index, bullet in enumerate(bullets):
 
@@ -148,32 +148,26 @@ def _render_grid_cards(
     slide,
     bullets,
 ):
+    count = len(bullets)
+    cols = 3 if count >= 5 else 2
+
     left = 0.7
     top = 1.75
-
     gap_x = 0.30
     gap_y = 0.25
-
     available_width = 11.93
 
-    card_width = (
-        available_width - gap_x
-    ) / 2
-
+    card_width = (available_width - gap_x * (cols - 1)) / cols
     card_height = 2.25
 
+    compact = cols == 3
+
     for index, bullet in enumerate(bullets):
+        row = index // cols
+        col = index % cols
 
-        row = index // 2
-        col = index % 2
-
-        x = left + col * (
-            card_width + gap_x
-        )
-
-        y = top + row * (
-            card_height + gap_y
-        )
+        x = left + col * (card_width + gap_x)
+        y = top + row * (card_height + gap_y)
 
         _add_card(
             slide=slide,
@@ -183,6 +177,8 @@ def _render_grid_cards(
             y=y,
             w=card_width,
             h=card_height,
+            font_size=13 if compact else 16,
+            text_offset=0.70 if compact else 0.90,
         )
 
 
@@ -198,6 +194,8 @@ def _add_card(
     y,
     w,
     h,
+    font_size=16,
+    text_offset=0.90,
 ):
     # Card background
     card = slide.shapes.add_shape(
@@ -231,10 +229,10 @@ def _add_card(
         slide=slide,
         text=text,
         x=x + 0.30,
-        y=y + 0.90,
+        y=y + text_offset,
         w=w - 0.60,
-        h=h - 1.20,
-        font_size=16,
+        h=h - text_offset - 0.30,
+        font_size=font_size,
         bold=True,
         color=Theme.TEXT,
         vertical_anchor=MSO_ANCHOR.TOP,

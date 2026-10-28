@@ -43,7 +43,7 @@ class SlideValidator:
         # 4. Research coverage
         total_facts = len(research.get("key_facts", []))
         used_facts = sum(1 for f in research.get("key_facts", []) if f in str(slide_content))
-        coverage = (used_facts/total_facts)*100 if total_facts else 100
+        coverage = (used_facts/total_facts)*100 if total_facts else 0
         report["validation"]["research_quality"]["coverage_score"] = coverage
         if coverage < 30:
             report["validation"]["warnings"].append("Low research coverage (<30%).")
@@ -51,7 +51,7 @@ class SlideValidator:
         # 5. Semantic preservation
         preserved = sum(1 for c in research.get("concepts", []) if c in str(slide_content))
         total_concepts = len(research.get("concepts", []))
-        preservation = (preserved/total_concepts)*100 if total_concepts else 100
+        preservation = (preserved/total_concepts)*100 if total_concepts else 0
         report["validation"]["semantic_quality"]["preservation_score"] = preservation
 
         # 6. Duplicate detection

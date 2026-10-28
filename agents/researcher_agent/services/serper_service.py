@@ -19,7 +19,7 @@ def serper_search(query: str, max_results: int = 3):
     payload = {"q": query, "num": max_results}
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, timeout=(5, 10))
         response.raise_for_status()
         data = response.json()
 

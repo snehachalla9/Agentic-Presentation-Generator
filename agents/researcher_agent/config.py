@@ -43,7 +43,7 @@ class ResearchConfig:
 # For backward compatibility with existing services
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
 
 
 # Simple function to get config

@@ -1,18 +1,3 @@
-# from tavily import TavilyClient
-# from agents.researcher_agent.config import TAVILY_API_KEY
-
-# client = TavilyClient(api_key=TAVILY_API_KEY)
-
-
-# def tavily_search(query):
-
-#     response = client.search(
-#         query=query,
-#         max_results=5
-#     )
-
-#     return response["results"]
-#!/usr/bin/env python3
 """
 Tavily Search Service
 """
@@ -61,10 +46,11 @@ def tavily_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         
         response = client.search(
             query=query,
-            search_depth="advanced",
+            search_depth="basic",
             max_results=max_results,
-            include_raw_content=True
-        )
+            include_raw_content=False,
+            timeout=10
+            )
         
         results = []
         if response and "results" in response:

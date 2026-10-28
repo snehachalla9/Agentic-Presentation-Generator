@@ -127,16 +127,20 @@ class ContentSynthesizer:
                             key_facts.append(item[:200])
         
         # Method 5: ULTIMATE FALLBACK - Generate from slide_focus
+        # if not key_facts and not concepts and not statistics:
+        #     print(f"   ⚠️ No data found! Generating from slide_focus: {slide_focus}")
+        #     key_facts = [
+        #         f"{slide_focus} is a key concept in this domain",
+        #         f"Understanding {slide_focus} enables better outcomes",
+        #         f"{slide_focus} has important practical applications",
+        #         f"Mastering {slide_focus} requires systematic approach"
+        #     ]
         if not key_facts and not concepts and not statistics:
-            print(f"   ⚠️ No data found! Generating from slide_focus: {slide_focus}")
-            key_facts = [
-                f"{slide_focus} is a key concept in this domain",
-                f"Understanding {slide_focus} enables better outcomes",
-                f"{slide_focus} has important practical applications",
-                f"Mastering {slide_focus} requires systematic approach"
-            ]
-            summary = f"This slide covers key aspects of {slide_focus}."
-            concepts = [slide_focus, "Core Concepts", "Applications"]
+            raise ValueError(
+                f"No research evidence available for slide: {slide_focus}"
+                )
+        summary = f"This slide covers key aspects of {slide_focus}."
+        concepts = [slide_focus, "Core Concepts", "Applications"]
         
         print(f"   📊 Found: {len(key_facts)} facts, {len(concepts)} concepts, {len(statistics)} stats")
         
@@ -194,19 +198,10 @@ class ContentSynthesizer:
                         bullets.append(cleaned)
         
         # FINAL FALLBACK - Ensure we have bullets
-        while len(bullets) < min(bullet_limit, 4):
-            fallbacks = [
-                f"Key insight about {headline}",
-                f"Understanding {headline} drives innovation",
-                f"Practical applications of {headline} are significant",
-                f"Mastering {headline} requires systematic approach"
-            ]
-            for fb in fallbacks:
-                if len(bullets) < min(bullet_limit, 4):
-                    bullets.append(fb)
-                else:
-                    break
-        
+        # while len(bullets) < min(bullet_limit, 4):
+        if not bullets:
+            raise ValueError(
+                f"Unable to generate evidence-based bullets for: {headline}")
         # Limit bullets
         bullets = bullets[:bullet_limit]
         
@@ -380,16 +375,10 @@ class ContentSynthesizer:
             callout = content.get("callout", "")
             if callout and len(callout) > 10:
                 new_bullets.append(callout[:100])
-            
-            # Fallback
             if not new_bullets:
-                new_bullets = [
-                    f"Key insight about {slide_focus}",
-                    f"Important aspect of {slide_focus}",
-                    f"Practical application of {slide_focus}",
-                    f"Understanding {slide_focus} drives results"
-                ]
-            
+                raise ValueError(
+                    f"LLM generated no evidence-based bullets for: {slide_focus}"
+                    )
             content["bullets"] = new_bullets[:bullet_limit]
         
         # Ensure main_message exists

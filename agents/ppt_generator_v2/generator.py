@@ -258,18 +258,11 @@ class PPTGeneratorV2:
         # ------------------------------------------
         # Use VisualBuilder decision
         # ------------------------------------------
-
-        if visual_type:
-
-            mapped_layout = (
-                self._map_visual_to_layout(
-                    visual_type
-                )
-            )
-
+        if visual_type and layout_name in ("content", "grid"):
+            mapped_layout = self._map_visual_to_layout(visual_type)
             if mapped_layout:
-
                 layout_name = mapped_layout
+
 
         # ------------------------------------------
         # Logging
@@ -324,6 +317,13 @@ class PPTGeneratorV2:
             prs=prs,
             data=render_data
         )
+        notes = data.get("speaker_notes") or {}
+        if isinstance(notes, dict) and notes:
+            text = "\n\n".join(
+                f"{k.replace('_', ' ').title()}: {v}"
+                for k, v in notes.items() if v
+            )
+            prs.slides[-1].notes_slide.notes_text_frame.text = text
 
     # ==========================================================
     # VISUAL → EXISTING LAYOUT

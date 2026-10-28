@@ -4,7 +4,7 @@
 
 #     results = []
 
-#     with DDGS() as ddgs:
+#     with DDGS(timeout=8) as ddgs:
 
 #         data = ddgs.text(query, max_results=5)
 
@@ -26,7 +26,7 @@ DuckDuckGo Search Service
 from typing import List, Dict, Any
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     DDGS_AVAILABLE = True
 except ImportError:
     DDGS_AVAILABLE = False
@@ -49,7 +49,7 @@ def duckduckgo_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         return []
     
     try:
-        with DDGS() as ddgs:
+        with DDGS(timeout=8) as ddgs:
             results = []
             for r in ddgs.text(query, max_results=max_results):
                 results.append({

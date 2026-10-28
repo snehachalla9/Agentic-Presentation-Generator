@@ -69,7 +69,14 @@ class SlideContentAgent:
             )
 
             # 1. Select relevant research
-            selected = self.selector.select(slide_blueprint)
+            # selected = self.selector.select(slide_blueprint)
+            section_research = (
+                section.get("research", {}) if isinstance(section, dict) else {}
+            )
+            selected = dict(section_research)
+            selected["slide_focus"] = (
+                slide_blueprint["slide"]["presentation_plan"].get("slide_focus", "")
+            )
 
             # 2. Synthesize research
             try:

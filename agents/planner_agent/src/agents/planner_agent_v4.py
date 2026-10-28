@@ -385,12 +385,11 @@ class LLMService:
             if not api_key:
                 raise ValueError("❌ GROQ_API_KEY not found! Please create .env file")
             self.client = Groq(api_key=api_key)
-            self.model = os.getenv("MODEL_NAME", "qwen/qwen3.6-27b")
+            self.model = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
         else:
             raise ValueError(f"Provider {provider} not supported yet")
-    
-    def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.1, max_tokens: int = 2500) -> str:
-        """Generate response from LLM with reduced token limit"""
+    def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.1, max_tokens: int = 6000) -> str:
+        """Generate response from LLM"""
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -399,12 +398,16 @@ class LLMService:
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                extra_body={"reasoning_effort": "low"}
             )
-            return response.choices[0].message.content.strip()
+            choice = response.choices[0]
+            if choice.finish_reason == "length":
+                print("   ⚠️ LLM output was TRUNCATED (finish_reason=length), raise max_tokens")
+            return (choice.message.content or "").strip()
         except Exception as e:
             raise Exception(f"LLM Service error: {e}")
-
+    
 # ============================================================================
 # PLANNER AGENT - FIXED VERSION
 # ============================================================================
@@ -514,7 +517,7 @@ class PlannerAgentV4:
                 system_prompt="You are a course intent analyzer. Extract structured data. Return ONLY valid JSON.",
                 user_prompt=prompt,
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=1500
             )
             response = self._clean_json_robust(response)
             data = json.loads(response)
@@ -618,7 +621,7 @@ Only return the JSON. No other text."""
                 system_prompt="You are a curriculum designer. Generate 5 modules. Return valid JSON only.",
                 user_prompt=prompt,
                 temperature=0.1,
-                max_tokens=480
+                max_tokens=1500
             )
             
             cleaned = self._clean_json_robust(response)
@@ -881,7 +884,7 @@ Only return the JSON. No other text."""
                 system_prompt="You are a research planner. Return ONLY valid JSON.",
                 user_prompt=prompt,
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=1500
             )
             response = self._clean_json_robust(response)
             data = json.loads(response)
