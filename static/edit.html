@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neurovia</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f8fafc; color: #0f172a;
+         min-height: 100vh; display: flex; justify-content: center; padding: 40px 16px; }
+  .card { background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.08);
+          padding: 32px; width: 100%; max-width: 680px; align-self: flex-start; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  .sub { color: #64748b; margin-bottom: 24px; font-size: 14px; }
+  input { width: 100%; padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+          font-size: 15px; margin-bottom: 14px; }
+  input:focus { outline: none; border-color: #4f46e5; }
+  button, a.btn { display: block; width: 100%; padding: 13px; background: #4f46e5; color: #fff;
+          border: 0; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer;
+          text-align: center; text-decoration: none; }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  a.btn { background: #16a34a; margin-top: 16px; }
+  #status { display: none; margin-top: 20px; padding: 16px; background: #f1f5f9; border-radius: 10px; }
+  .bar { height: 6px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+  .bar span { display: block; height: 100%; width: 35%; background: #4f46e5; border-radius: 4px;
+              animation: slide 1.2s infinite ease-in-out; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+  .err { color: #dc2626; margin-top: 8px; font-size: 14px; white-space: pre-wrap; }
+  .meta { color: #475569; font-size: 13px; margin-top: 8px; }
+  ol { margin: 16px 0 0 20px; font-size: 14px; line-height: 1.7; }
+  h2 { font-size: 15px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🧠 Neurovia</h1>
+  <p class="sub">Generate a PowerPoint presentation from any topic</p>
+
+  <input id="topic" placeholder="e.g. Agentic AI" value="">
+  <button id="go">Generate presentation</button>
+
+  <div id="status">
+    <div id="msg">Starting...</div>
+    <div class="bar" id="bar"><span></span></div>
+    <div class="meta" id="meta"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let timer = null, startedAt = 0;
+
+$("go").onclick = async () => {
+  const topic = $("topic").value.trim();
+  if (topic.length < 2) { alert("Enter a topic"); return; }
+
+  $("go").disabled = true;
+  $("result").innerHTML = "";
+  $("err").textContent = "";
+  $("status").style.display = "block";
+  $("bar").style.display = "block";
+  $("msg").textContent = "Submitting...";
+
+  try {
+    const res = await fetch("/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic })
+    });
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    const { job_id } = await res.json();
+    startedAt = Date.now();
+    poll(job_id);
+  } catch (e) {
+    fail(e.message);
+  }
+};
+
+async function poll(jobId) {
+  try {
+    const res = await fetch("/jobs/" + jobId);
+    const job = await res.json();
+    const secs = Math.round((Date.now() - startedAt) / 1000);
+
+    if (job.status === "queued" || job.status === "running") {
+      $("msg").textContent = job.status === "queued" ? "Queued (another job is running)..." : "Generating... planning, researching, writing slides";
+      $("meta").textContent = "Elapsed: " + secs + "s. This usually takes 2 to 5 minutes.";
+      timer = setTimeout(() => poll(jobId), 3000);
+    } else if (job.status === "completed") {
+      $("bar").style.display = "none";
+      $("msg").textContent = "✅ Done in " + job.duration_seconds + "s";
+      $("meta").textContent = job.slide_count + " slides";
+      $("go").disabled = false;
+      $("result").innerHTML = '<a class="btn" href="/jobs/' + jobId + '/download">⬇ Download PPTX</a>';
+      showSlides(jobId);
+    } else {
+      fail(job.error || "Generation failed");
+    }
+  } catch (e) {
+    $("meta").textContent = "Connection issue, retrying...";
+    timer = setTimeout(() => poll(jobId), 5000);
+  }
+}
+
+async function showSlides(jobId) {
+  try {
+    const res = await fetch("/jobs/" + jobId + "/slides");
+    const data = await res.json();
+    const items = data.slides.map(s => {
+      const t = (s.slide && s.slide.content && s.slide.content.title) || "Untitled";
+      return "<li></li>".replace("</li>", "") + esc(t) + "</li>";
+    }).join("");
+    $("result").innerHTML += "<h2>Slides</h2><ol>" + items + "</ol>";
+  } catch (e) { /* preview is optional */ }
+}
+
+function fail(message) {
+  $("bar").style.display = "none";
+  $("msg").textContent = "❌ Failed";
+  $("err").textContent = message;
+  $("go").disabled = false;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+</script>
+</body>
+</html>
