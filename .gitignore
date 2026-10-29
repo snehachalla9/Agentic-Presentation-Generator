@@ -10,3 +10,10 @@ __pycache__/
 *.pyc
 .env
 output/
+.env
+output/
+run.log
+__pycache__/
+*.pyc
+net_test.py
+llm_test.py
