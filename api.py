@@ -23,7 +23,9 @@ def index():
 
 jobs: dict = {}                      # job_id -> status dict (in memory)
 pipeline_lock = threading.Lock()     # agents write to shared output/ paths, so one job at a time
-graph = build_graph(llm_gateway=LLMGateway())
+# graph = build_graph(llm_gateway=LLMGateway())
+llm_gateway = LLMGateway()
+graph = build_graph(llm_gateway=llm_gateway)
 
 
 class GenerateRequest(BaseModel):
@@ -44,31 +46,44 @@ def run_job(job_id: str, topic: str):
     with pipeline_lock:
         job["status"] = "running"
         started = time.time()
+        llm_gateway.reset_metrics()
         try:
             final_state = graph.invoke(make_initial_state(topic))
-
             ppt = final_state.get("ppt")
             if not ppt or not Path(ppt).exists():
-                reasons = "; ".join(map(str, final_state.get("errors", []))) or "unknown error"
-                raise RuntimeError(f"No PPT produced: {reasons}")
-
+                 reasons = "; ".join(map(str, final_state.get("errors", []))) or "unknown error"
+                 raise RuntimeError(f"No PPT produced: {reasons}")
+            validation_results = final_state.get("validation_results", {})
+            if not validation_results.get("ppt_valid", False):
+                 ppt_errors = validation_results.get("ppt_errors", [])
+                 raise RuntimeError(f"PPT validation failed: {ppt_errors}")
             job_dir = JOBS_DIR / job_id
             job_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(ppt, job_dir / "presentation.pptx")
-
             slides = (final_state.get("content") or {}).get("slides", [])
+            validation_results = final_state.get("validation_results", {})
             job.update(
                 status="completed",
                 pptx_path=str(job_dir / "presentation.pptx"),
                 slide_count=len(slides),
-                warnings=len(final_state.get("validation_results", {}).get("content_warnings", [])),
-                errors=final_state.get("errors", []),
-                slides=slides,
-            )
+                warnings=len(
+                    validation_results.get("content_warnings", [])),
+                    validation_results=validation_results,
+                    planner_valid=validation_results.get("planner_valid"),
+                    research_valid=validation_results.get("research_valid"),
+                    content_valid=validation_results.get("content_valid"),
+                    ppt_valid=validation_results.get("ppt_valid"),
+                    errors=final_state.get("errors", []),
+                    slides=slides,
+                    )
         except Exception as e:
             job.update(status="failed", error=f"{type(e).__name__}: {e}")
         finally:
             job["duration_seconds"] = round(time.time() - started, 1)
+            job["llm_metrics"] = llm_gateway.get_metrics()
+            print("\n========== LLM METRICS ==========")
+            print(job["llm_metrics"])
+            print("=================================\n")
 
 
 @app.post("/generate", status_code=202)

@@ -1,6 +1,8 @@
 from langgraph.graph import StateGraph, START, END
+import time
 
 from .state import AgentState
+
 
 from agents.planner_agent.src.agents.planner_agent_v4 import UniversalPlanner
 from agents.researcher_agent.researcher import ResearcherAgent
@@ -547,6 +549,16 @@ def route_from_supervisor(state: AgentState):
     next_agent = state.get("next_agent")
 
     return next_agent
+def timed_node(name, node):
+    def wrapper(state):
+        started = time.perf_counter()
+        try:
+            return node(state)
+        finally:
+            elapsed = time.perf_counter() - started
+            print(f"[NODE TIMING] {name}: {elapsed:.3f} seconds")
+
+    return wrapper
 
 
 # ============================================================
@@ -568,56 +580,47 @@ def build_graph(llm_gateway):
 
     workflow.add_node(
         "planner",
-        lambda state: planner_node(
-            state,
-            llm_gateway
+        timed_node("planner", lambda state: planner_node(state, llm_gateway))
         )
-    )
 
     workflow.add_node(
         "planner_validator",
-        planner_validator_node
+        timed_node("planner_validator", planner_validator_node)
     )
 
     workflow.add_node(
         "research",
-        lambda state: research_node(
-            state,
-            llm_gateway
-        )
+        timed_node("research", lambda state: research_node(state, llm_gateway))
     )
 
     workflow.add_node(
         "research_validator",
-        research_validator_node
+        timed_node("research_validator", research_validator_node)
     )
 
     workflow.add_node(
         "content",
-        lambda state: content_node(
-            state,
-            llm_gateway
-        )
+        timed_node("content", lambda state: content_node(state, llm_gateway))
     )
 
     workflow.add_node(
         "content_validator",
-        content_validator_node
+        timed_node("content_validator", content_validator_node)
     )
 
     workflow.add_node(
         "ppt",
-        ppt_node
+        timed_node("ppt", ppt_node)
     )
 
     workflow.add_node(
         "ppt_validator",
-        ppt_validator_node
+        timed_node("ppt_validator", ppt_validator_node)
     )
 
     workflow.add_node(
         "supervisor",
-        supervisor_node
+        timed_node("supervisor", supervisor_node)
     )
 
     # ========================================================
